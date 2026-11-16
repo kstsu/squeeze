@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +50,8 @@ class CompressionJob:
     target_mb: float
     original_name: str
     output_format: str = "mp4"
+    trim_start: float = 0.0
+    trim_end: float | None = None
 
 
 class CompressionError(Exception):
@@ -111,6 +115,18 @@ def parse_output_format(output_format: str) -> str:
     return normalized
 
 
+def parse_trim_seconds(value: str | None, label: str) -> float | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        seconds = float(value)
+    except ValueError as error:
+        raise CompressionError(f"Enter a valid {label} time in seconds.") from error
+    if not math.isfinite(seconds) or seconds < 0:
+        raise CompressionError(f"{label.capitalize()} time must be zero or greater.")
+    return seconds
+
+
 def require_binary(binary: str) -> str:
     path = shutil.which(binary)
     if path:
@@ -156,15 +172,16 @@ def calculate_bitrate_kbps(target_mb: float, duration_seconds: float) -> int:
     return max(160, int(video_bits / 1000))
 
 
-def build_ffmpeg_command(ffmpeg: str, job: CompressionJob, duration: float, bitrate: int) -> list[str]:
+def build_ffmpeg_command(ffmpeg: str, job: CompressionJob, duration: float, bitrate: int, trim_duration: float | None = None) -> list[str]:
     settings = OUTPUT_FORMATS[job.output_format]
-    command = [
-        ffmpeg,
-        "-hide_banner", "-loglevel", "error",
-        "-progress", "pipe:1", "-nostats", "-stats_period", "0.25",
-        "-i", str(job.source),
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-stats_period", "0.25"]
+    if job.trim_start > 0:
+        command.extend(["-ss", f"{job.trim_start:.3f}"])
+    command.extend(["-i", str(job.source)])
+    if trim_duration is not None:
+        command.extend(["-t", f"{trim_duration:.3f}"])
+    command.extend([
+        "-map", "0:v:0", "-map", "0:a:0?",
         "-c:v", settings["video_codec"],
         "-threads", "0",
         "-b:v", f"{bitrate}k",
@@ -173,11 +190,13 @@ def build_ffmpeg_command(ffmpeg: str, job: CompressionJob, duration: float, bitr
         "-pix_fmt", settings["pixel_format"],
         "-c:a", settings["audio_codec"],
         "-b:a", "64k",
-    ]
+    ])
     if job.output_format in {"mp4", "mov"}:
-        command[command.index("-threads"):command.index("-threads")] = ["-preset", "veryfast"]
+        command[command.index("-threads"):command.index("-threads")] = ["-preset", "superfast"]
     else:
-        command[command.index("-threads"):command.index("-threads")] = ["-deadline", "good", "-cpu-used", "4"]
+        command[command.index("-threads"):command.index("-threads")] = [
+            "-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1", "-tile-columns", "2"
+        ]
     command.extend(settings["format_flags"])
     command.extend(["-y", str(job.output)])
     return command
@@ -227,10 +246,15 @@ async def run_compression(job: CompressionJob) -> AsyncIterator[bytes]:
     try:
         async with asyncio.timeout(MAX_COMPRESSION_SECONDS):
             yield progress_event(5, "Checking video", "Reading duration and stream information.")
-            duration, _ = await asyncio.to_thread(run_probe, job.source)
-            bitrate = calculate_bitrate_kbps(job.target_mb, duration)
+            source_duration, _ = await asyncio.to_thread(run_probe, job.source)
+            trim_end = source_duration if job.trim_end is None else min(job.trim_end, source_duration)
+            if job.trim_start >= source_duration or trim_end <= job.trim_start:
+                raise CompressionError("Choose a trim range inside the video duration.")
+            encode_duration = trim_end - job.trim_start
+            bitrate = calculate_bitrate_kbps(job.target_mb, encode_duration)
             ffmpeg = require_binary("ffmpeg")
-            command = build_ffmpeg_command(ffmpeg, job, duration, bitrate)
+            trim_duration = encode_duration if job.trim_start > 0 or job.trim_end is not None else None
+            command = build_ffmpeg_command(ffmpeg, job, source_duration, bitrate, trim_duration)
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
@@ -241,15 +265,25 @@ async def run_compression(job: CompressionJob) -> AsyncIterator[bytes]:
             stderr_task = asyncio.create_task(process.stderr.read())
             yield progress_event(8, "Compressing video", f"Native FFmpeg encoding has started for {job.output_format.upper()}.")
             last_percent = 8
+            encode_started = time.monotonic()
             while True:
-                line = await process.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=0.75)
+                except asyncio.TimeoutError:
+                    elapsed = int(time.monotonic() - encode_started)
+                    yield progress_event(
+                        last_percent,
+                        "Compressing video",
+                        f"FFmpeg is still encoding {job.output_format.upper()} · {elapsed}s elapsed.",
+                    )
+                    continue
                 if not line:
                     break
                 text = line.decode(errors="replace").strip()
                 if text.startswith("out_time_ms="):
                     try:
                         encoded_seconds = int(text.split("=", 1)[1]) / 1_000_000
-                        percent = min(97, 8 + int((encoded_seconds / duration) * 89))
+                        percent = min(97, 8 + int((encoded_seconds / encode_duration) * 89))
                         if percent > last_percent:
                             last_percent = percent
                             yield progress_event(percent, "Compressing video", f"FFmpeg is writing a smaller {job.output_format.upper()} video.")
@@ -316,7 +350,7 @@ async def favicon() -> FileResponse:
 
 
 @app.post("/api/compress", response_model=None)
-async def compress(video: UploadFile = File(...), target_mb: str = Form(...), output_format: str = Form("mp4")) -> StreamingResponse | JSONResponse:
+async def compress(video: UploadFile = File(...), target_mb: str = Form(...), output_format: str = Form("mp4"), trim_start: str = Form("0"), trim_end: str = Form("")) -> StreamingResponse | JSONResponse:
     job_id = uuid.uuid4().hex
     job_dir = TEMP_ROOT / job_id
     job_dir.mkdir(mode=0o700)
@@ -326,10 +360,12 @@ async def compress(video: UploadFile = File(...), target_mb: str = Form(...), ou
         original_name = safe_name(video.filename)
         target = parse_target(target_mb)
         selected_format = parse_output_format(output_format)
+        selected_trim_start = parse_trim_seconds(trim_start, "start") or 0.0
+        selected_trim_end = parse_trim_seconds(trim_end, "end")
         await save_upload(video, source)
         output = job_dir / f"compressed.{selected_format}"
         (job_dir / "download-name.txt").write_text(compressed_filename(original_name, selected_format), encoding="utf-8")
-        job = CompressionJob(job_id, source, output, target, original_name, selected_format)
+        job = CompressionJob(job_id, source, output, target, original_name, selected_format, selected_trim_start, selected_trim_end)
 
         async def stream() -> AsyncIterator[bytes]:
             try:

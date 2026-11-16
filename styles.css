@@ -172,6 +172,16 @@
   .button-arrow { font-size: 1.25rem; font-weight: 400; line-height: 1; }
 
   .file-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding: 0.875rem; background: var(--surface-raised); border-radius: var(--radius-md); }
+  .trim-editor { display: grid; gap: 1rem; margin-top: 1rem; padding: 1rem; background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-md); }
+  .trim-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+  .trim-heading h3 { margin-top: 0.35rem; font-size: 1rem; }
+  .trim-duration { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .video-preview { width: 100%; max-height: 15rem; background: #0b0c0c; border-radius: var(--radius-sm); }
+  .trim-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .trim-field { display: grid; gap: 0.45rem; }
+  .trim-field label { font-size: 0.75rem; font-weight: 650; }
+  .trim-field input[type="number"] { width: 100%; min-height: 2.5rem; padding: 0 0.75rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .trim-range { width: 100%; accent-color: var(--accent); }
   .file-summary-main { min-width: 0; display: flex; align-items: center; gap: 0.75rem; }
   .file-type { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; color: var(--accent); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.08em; }
   .file-name { overflow: hidden; max-width: 18rem; color: var(--ink); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -232,6 +242,7 @@
     .panel-heading { flex-direction: column; }
     .result-stats { gap: 0.5rem; }
     .result-stats dd { font-size: 0.8125rem; }
+    .trim-controls { grid-template-columns: 1fr; }
   }
 }
 

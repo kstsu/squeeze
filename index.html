@@ -65,6 +65,20 @@
             <button class="text-button" id="remove-file" type="button">Remove</button>
           </div>
 
+          <section class="trim-editor" id="trim-editor" aria-labelledby="trim-title" hidden>
+            <div class="trim-heading">
+              <div><p class="eyebrow">Trim</p><h3 id="trim-title">Choose the part to keep</h3></div>
+              <span class="trim-duration" id="trim-duration">00:00</span>
+            </div>
+            <video class="video-preview" id="video-preview" controls preload="metadata"></video>
+            <div class="trim-controls">
+              <div class="trim-field"><label for="trim-start">Start · seconds</label><input id="trim-start" type="text" value="0" inputmode="decimal" autocomplete="off" /><input class="trim-range" id="trim-start-range" type="range" min="0" max="0" step="0.1" value="0" aria-label="Trim start position" /></div>
+              <div class="trim-field"><label for="trim-end">End · seconds</label><input id="trim-end" type="text" value="0.1" inputmode="decimal" autocomplete="off" /><input class="trim-range" id="trim-end-range" type="range" min="0.1" max="0.1" step="0.1" value="0.1" aria-label="Trim end position" /></div>
+            </div>
+            <p class="field-help">Leave the full range selected to compress the entire video.</p>
+            <p class="field-error" id="trim-error" role="alert" hidden></p>
+          </section>
+
           <form class="compress-form" id="compress-form" novalidate>
             <div class="field-group">
               <label for="target-size">Target file size</label>

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from app import CompressionJob, build_ffmpeg_command, calculate_bitrate_kbps, compressed_filename, parse_output_format, parse_target, safe_download_filename, safe_name
+from app import CompressionJob, build_ffmpeg_command, calculate_bitrate_kbps, compressed_filename, parse_output_format, parse_target, parse_trim_seconds, safe_download_filename, safe_name
 
 
 class ValidationTests(unittest.TestCase):
@@ -39,6 +39,14 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "Choose MP4"):
             parse_output_format("avi")
 
+    def test_trim_seconds_accepts_empty_end(self) -> None:
+        self.assertIsNone(parse_trim_seconds("", "end"))
+        self.assertEqual(parse_trim_seconds("2.5", "start"), 2.5)
+
+    def test_trim_seconds_rejects_negative_values(self) -> None:
+        with self.assertRaisesRegex(Exception, "zero or greater"):
+            parse_trim_seconds("-1", "start")
+
 
 class CompressionMathTests(unittest.TestCase):
     def test_bitrate_is_positive_for_a_normal_job(self) -> None:
@@ -48,10 +56,12 @@ class CompressionMathTests(unittest.TestCase):
         self.assertGreater(calculate_bitrate_kbps(1, 0), 160)
 
     def test_ffmpeg_command_does_not_use_a_shell(self) -> None:
-        job = CompressionJob("abc", Path("source"), Path("output"), 20, "clip.mp4")
-        command = build_ffmpeg_command("ffmpeg", job, 60, 1800)
+        job = CompressionJob("abc", Path("source"), Path("output"), 20, "clip.mp4", "mp4", 2.0, 8.0)
+        command = build_ffmpeg_command("ffmpeg", job, 60, 1800, 6.0)
         self.assertEqual(command[0], "ffmpeg")
         self.assertIn("-threads", command)
+        self.assertIn("-ss", command)
+        self.assertIn("-t", command)
         self.assertNotIn("shell=True", command)
 
 

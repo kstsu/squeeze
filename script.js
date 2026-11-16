@@ -36,6 +36,7 @@ const elements = {
   downloadButton: document.querySelector("#download-button"),
   downloadLabel: document.querySelector("#download-label"),
   startOver: document.querySelector("#start-over"),
+  trimEditor: document.querySelector("#trim-editor"), videoPreview: document.querySelector("#video-preview"), trimDuration: document.querySelector("#trim-duration"), trimStart: document.querySelector("#trim-start"), trimEnd: document.querySelector("#trim-end"), trimStartRange: document.querySelector("#trim-start-range"), trimEndRange: document.querySelector("#trim-end-range"), trimError: document.querySelector("#trim-error"),
 };
 
 /** @type {File | null} */
@@ -44,6 +45,7 @@ let selectedFile = null;
 let activeRequest = null;
 let isCompressing = false;
 let desktopMode = false;
+let hasVideoMetadata = false;
 /** @type {{job_id: string, filename: string} | null} */
 let latestResult = null;
 /** @type {XMLHttpRequest | null} */
@@ -95,7 +97,64 @@ function validateTargetSize() {
 
 function updateSubmitState() {
   const target = validateTargetSize();
-  elements.compressButton.disabled = !selectedFile || !target.valid || isCompressing;
+  const trim = validateTrim(false);
+  elements.compressButton.disabled = !selectedFile || !hasVideoMetadata || !target.valid || !trim.valid || isCompressing;
+}
+
+function validateTrim(showError = true) {
+  const start = Number(elements.trimStart.value);
+  const end = Number(elements.trimEnd.value);
+  const duration = Number(elements.trimEnd.max);
+  let error = "";
+  if (hasVideoMetadata && (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > duration || end <= start)) {
+    error = "Choose a start and end inside the video duration.";
+  }
+  elements.trimError.textContent = error;
+  elements.trimError.hidden = !error || !showError;
+  return { valid: !error, start, end };
+}
+
+function normalizeTrimControls(changedField = "", shouldFocusPreview = true, rawValue = null) {
+  if (!hasVideoMetadata) return;
+  const duration = Number(elements.trimEnd.max);
+  const minimumRange = Math.min(0.1, duration);
+  let start = changedField === "start" && rawValue !== null ? Number(rawValue) : Number(elements.trimStart.value);
+  let end = changedField === "end" && rawValue !== null ? Number(rawValue) : Number(elements.trimEnd.value);
+
+  start = Number.isFinite(start) ? Math.max(0, Math.min(start, Math.max(0, duration - minimumRange))) : 0;
+  end = Number.isFinite(end) ? Math.max(minimumRange, Math.min(end, duration)) : duration;
+
+  if (changedField === "start" && start >= end) end = Math.min(duration, start + minimumRange);
+  if (changedField === "end" && end <= start) start = Math.max(0, end - minimumRange);
+  if (end <= start) {
+    start = 0;
+    end = duration;
+  }
+
+  if (changedField !== "start-input") elements.trimStart.value = start.toFixed(1).replace(/\.0$/, "");
+  if (changedField !== "end-input") elements.trimEnd.value = end.toFixed(1).replace(/\.0$/, "");
+  elements.trimStartRange.value = String(start);
+  elements.trimEndRange.value = String(end);
+  if (shouldFocusPreview && elements.videoPreview.readyState >= 1) {
+    elements.videoPreview.currentTime = changedField === "end" ? end : start;
+  }
+  validateTrim(true);
+  updateSubmitState();
+}
+
+function handleTrimRangeInput(field) {
+  const range = field === "start" ? elements.trimStartRange : elements.trimEndRange;
+  const input = field === "start" ? elements.trimStart : elements.trimEnd;
+  normalizeTrimControls(field, true, range.value);
+}
+
+function keepPreviewInsideTrim() {
+  if (!hasVideoMetadata) return;
+  const { start, end } = validateTrim(false);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+  if (elements.videoPreview.currentTime < start || elements.videoPreview.currentTime >= end) {
+    elements.videoPreview.currentTime = start;
+  }
 }
 
 function getVideoMetadata(file) {
@@ -117,6 +176,7 @@ function getVideoMetadata(file) {
 
 async function updateFileSummary(file) {
   selectedFile = file;
+  hasVideoMetadata = false;
   const extension = getExtension(file.name).toUpperCase() || "VIDEO";
   const fileType = elements.fileSummary.querySelector(".file-type");
   fileType.textContent = extension;
@@ -125,19 +185,34 @@ async function updateFileSummary(file) {
   elements.fileSummary.hidden = false;
   elements.dropzone.hidden = true;
   elements.result.hidden = true;
+  elements.trimEditor.hidden = false;
+  elements.videoPreview.src = URL.createObjectURL(file);
   elements.progressArea.hidden = true;
   setMessage("");
   updateSubmitState();
 
   const duration = await getVideoMetadata(file);
   if (selectedFile !== file) return;
+  if (duration <= 0) {
+    elements.trimError.textContent = "The video duration could not be read.";
+    elements.trimError.hidden = false;
+    updateSubmitState();
+    return;
+  }
   elements.fileMeta.textContent = `${formatBytes(file.size)} · ${formatDuration(duration)}`;
+  hasVideoMetadata = true;
+  elements.trimDuration.textContent = formatDuration(duration);
+  elements.trimStart.max = String(duration); elements.trimStartRange.max = String(duration); elements.trimStartRange.value = "0";
+  elements.trimEnd.max = String(duration); elements.trimEndRange.max = String(duration); elements.trimEnd.value = String(duration); elements.trimEndRange.value = String(duration);
+  elements.videoPreview.currentTime = 0;
+  updateSubmitState();
 }
 
 function clearFile() {
   activeRequest?.abort();
   activeRequest = null;
   selectedFile = null;
+  hasVideoMetadata = false;
   isCompressing = false;
   elements.fileInput.value = "";
   elements.fileSummary.hidden = true;
@@ -145,6 +220,8 @@ function clearFile() {
   elements.dropzoneTitle.textContent = "Drop your video here";
   elements.progressArea.hidden = true;
   elements.result.hidden = true;
+  elements.trimEditor.hidden = true;
+  elements.videoPreview.removeAttribute("src"); elements.videoPreview.load();
   setMessage("");
   updateSubmitState();
 }
@@ -177,7 +254,7 @@ async function readError(response) {
 }
 
 function handleProgressPayload(payload) {
-  if (payload.type === "progress") {
+      if (payload.type === "progress") {
     setProgress(payload.percent, payload.label, payload.detail);
   } else if (payload.type === "complete") {
     showResult(payload);
@@ -285,7 +362,8 @@ function consumeProgress(response) {
 async function compressVideo() {
   if (!selectedFile || isCompressing) return;
   const target = validateTargetSize();
-  if (!target.valid) {
+  const trim = validateTrim(true);
+  if (!target.valid || !trim.valid || !hasVideoMetadata) {
     elements.targetSize.focus();
     return;
   }
@@ -302,6 +380,8 @@ async function compressVideo() {
   formData.append("video", selectedFile, selectedFile.name);
   formData.append("target_mb", String(target.value));
   formData.append("output_format", elements.outputFormat.value);
+  formData.append("trim_start", elements.trimStart.value);
+  formData.append("trim_end", elements.trimEnd.value);
 
   try {
     await compressWithProgress(formData);
@@ -368,6 +448,34 @@ elements.form.addEventListener("submit", (event) => {
   void compressVideo();
 });
 elements.targetSize.addEventListener("input", updateSubmitState);
+elements.trimStartRange.addEventListener("input", () => handleTrimRangeInput("start"));
+elements.trimEndRange.addEventListener("input", () => handleTrimRangeInput("end"));
+elements.trimStart.addEventListener("change", () => normalizeTrimControls("start-input", false));
+elements.trimEnd.addEventListener("change", () => normalizeTrimControls("end-input", false));
+elements.trimStart.addEventListener("blur", () => normalizeTrimControls("start-input", false));
+elements.trimEnd.addEventListener("blur", () => normalizeTrimControls("end-input", false));
+elements.videoPreview.addEventListener("loadedmetadata", keepPreviewInsideTrim);
+elements.videoPreview.addEventListener("play", () => {
+  const { start, end } = validateTrim(false);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+  if (elements.videoPreview.currentTime < start || elements.videoPreview.currentTime >= end) {
+    elements.videoPreview.currentTime = start;
+  }
+});
+elements.videoPreview.addEventListener("timeupdate", () => {
+  if (!hasVideoMetadata) return;
+  const { end } = validateTrim(false);
+  if (Number.isFinite(end) && elements.videoPreview.currentTime >= end) {
+    elements.videoPreview.pause();
+    elements.videoPreview.currentTime = end;
+  }
+});
+elements.videoPreview.addEventListener("ended", () => {
+  const { start, end } = validateTrim(false);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    elements.videoPreview.currentTime = end;
+  }
+});
 
 document.querySelectorAll("[data-size]").forEach((button) => {
   button.addEventListener("click", () => {
