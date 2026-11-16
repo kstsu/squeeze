@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Compress a video to a specific file size with a fast local FFmpeg server, then download the finished MP4."
+    />
+    <meta name="theme-color" content="#101111" />
+    <title>Squeeze — Video compressor</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to compressor</a>
+
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Squeeze home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M7 5h18v22H7z" />
+          <path d="M12 12l4-4 4 4M12 20l4 4 4-4" />
+        </svg>
+        <span>Squeeze</span>
+      </a>
+      <p class="header-note" id="header-note">Private desktop compression</p>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Video compressor</p>
+          <h1 id="page-title">Compress a video.</h1>
+          <p class="hero-lede">
+            Choose a file, set a target size, and save a smaller MP4.
+          </p>
+        </div>
+
+        <section class="compressor-panel" aria-labelledby="compressor-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">COMPRESSOR</p>
+              <h2 id="compressor-title">Choose a video</h2>
+            </div>
+            <span class="privacy-label" id="privacy-label">Runs on this computer</span>
+          </div>
+
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-controls="video-file" aria-describedby="dropzone-help">
+            <span class="dropzone-mark" aria-hidden="true">+</span>
+            <span class="dropzone-title" id="dropzone-title">Drop your video here</span>
+            <span class="dropzone-help" id="dropzone-help">or choose an MP4, MOV, WEBM, MKV, AVI, or M4V file</span>
+            <label class="secondary-button" for="video-file">Choose video</label>
+            <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo,video/x-m4v" />
+          </div>
+
+          <div class="file-summary" id="file-summary" hidden>
+            <div class="file-summary-main">
+              <span class="file-type" aria-hidden="true">MP4</span>
+              <div>
+                <p class="file-name" id="file-name">video.mp4</p>
+                <p class="file-meta" id="file-meta">100 MB · 00:00</p>
+              </div>
+            </div>
+            <button class="text-button" id="remove-file" type="button">Remove</button>
+          </div>
+
+          <form class="compress-form" id="compress-form" novalidate>
+            <div class="field-group">
+              <label for="target-size">Target file size</label>
+              <div class="size-input-wrap">
+                <input id="target-size" name="target-size" type="number" min="1" max="4096" step="0.1" value="20" inputmode="decimal" aria-describedby="target-help target-error" required />
+                <span aria-hidden="true">MB</span>
+              </div>
+              <p class="field-help" id="target-help">Aim a little below the app’s hard limit for a safer send.</p>
+              <p class="field-error" id="target-error" role="alert" hidden></p>
+            </div>
+
+            <div class="field-group">
+              <label for="output-format">Output format</label>
+              <select id="output-format" name="output-format" aria-describedby="format-help">
+                <option value="mp4">MP4 · Recommended for sharing</option>
+                <option value="mov">MOV · Apple and editing workflows</option>
+                <option value="webm">WebM · Web and browser playback</option>
+              </select>
+              <p class="field-help" id="format-help">Choose the container you need after compression.</p>
+            </div>
+
+            <div class="preset-row" aria-label="Target size presets">
+              <span class="preset-label">Quick set</span>
+              <button class="preset-button" type="button" data-size="20">Discord · 20 MB</button>
+              <button class="preset-button" type="button" data-size="25">Facebook · 25 MB</button>
+              <button class="preset-button" type="button" data-size="512">X · 512 MB</button>
+            </div>
+
+            <button class="primary-button" id="compress-button" type="submit" disabled>
+              <span id="compress-label">Compress video</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+          </form>
+
+          <div class="progress-area" id="progress-area" hidden aria-live="polite">
+            <div class="progress-topline">
+              <span id="progress-label">Preparing compressor</span>
+              <span id="progress-value">0%</span>
+            </div>
+            <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Compression progress">
+              <span id="progress-fill"></span>
+            </div>
+            <div class="progress-footer">
+              <p class="progress-detail" id="progress-detail">Preparing the local encoder.</p>
+              <button class="text-button cancel-button" id="cancel-job" type="button">Cancel</button>
+            </div>
+          </div>
+
+          <div class="message" id="message" role="status" aria-live="polite" hidden></div>
+
+          <div class="result" id="result" hidden>
+            <div class="result-heading">
+              <span class="result-check" aria-hidden="true">✓</span>
+              <div>
+                <p class="eyebrow">Ready to send</p>
+                <h3 id="result-title">Your compressed file is ready.</h3>
+              </div>
+            </div>
+            <dl class="result-stats">
+              <div><dt>Original</dt><dd id="original-size">—</dd></div>
+              <div><dt>Compressed</dt><dd id="compressed-size">—</dd></div>
+              <div><dt>Saved</dt><dd id="saved-size">—</dd></div>
+            </dl>
+            <a class="primary-button download-button" id="download-button" href="#" download>
+              <span id="download-label">Download file</span> <span class="button-arrow" aria-hidden="true">↓</span>
+            </a>
+            <button class="secondary-button start-over" id="start-over" type="button">Compress another video</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="how-it-works" aria-labelledby="how-title">
+        <div class="section-intro">
+          <p class="eyebrow">Built for the handoff</p>
+          <h2 id="how-title">Three steps to a smaller file.</h2>
+        </div>
+        <ol class="steps-list">
+          <li><span class="step-number">01</span><div><h3>Pick a video</h3><p>Bring the file that is too large to send.</p></div></li>
+          <li><span class="step-number">02</span><div><h3>Set the limit</h3><p>Use an app preset or enter your own target size.</p></div></li>
+          <li><span class="step-number">03</span><div><h3>Download the MP4</h3><p>Get the finished copy while keeping your original untouched.</p></div></li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Compression happens on this computer.</span>
+      <span>Native FFmpeg · selectable output</span>
+    </footer>
+  </body>
+</html>

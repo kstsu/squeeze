@@ -1,0 +1,24 @@
+[project]
+name = "squeeze-video-compressor"
+version = "1.0.0"
+description = "A local-first web interface for compressing videos to a target file size."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.12",
+  "imageio-ffmpeg==0.8.1",
+  "pywebview==6.2.1",
+  "python-multipart==0.0.20",
+  "uvicorn[standard]==0.34.2",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pyright]
+include = ["app.py"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
