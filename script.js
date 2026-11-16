@@ -256,8 +256,8 @@ function compressWithProgress(formData) {
 }
 
 /*
- * Kept separate from the upload transport so the same SSE payloads work in
- * both browser and desktop WebView environments.
+ * Kept separate from the upload transport so the local progress stream stays
+ * easy to reason about inside the desktop WebView.
  */
 function consumeProgress(response) {
   const reader = response.body?.getReader();

@@ -46,13 +46,7 @@ Run the desktop launcher from PowerShell:
 
 The launcher creates `.venv` once, installs the pinned dependencies, starts the local service on an available port, and opens the native Squeeze window at a comfortable `1280 × 820` starting resolution. The window can still be resized down to `1000 × 700`. Close the Squeeze window to stop the service.
 
-The browser-only development server is still available when you want to inspect the HTML directly:
-
-```powershell
-.\start.ps1
-```
-
-Do not run `python -m venv .venv` while the environment is active. Recreating an active virtual environment on Windows can fail because `.venv\Scripts\python.exe` is in use.
+For development, run the desktop launcher with `.\run-desktop.ps1`. Do not run `python -m venv .venv` while the environment is active. Recreating an active virtual environment on Windows can fail because `.venv\Scripts\python.exe` is in use.
 
 ## Build the Windows desktop app
 
@@ -78,16 +72,6 @@ release\Squeeze-windows.zip
 
 Upload that ZIP as a GitHub Release asset. Users extract it and run `Squeeze.exe`. The portable folder starts faster because Windows does not need to unpack the application on every launch.
 
-## Browser-only server
-
-For development or a future hosted deployment, the API can still run in a browser:
-
-```powershell
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
-```
-
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Desktop mode uses an ephemeral port and does not depend on this fixed port.
-
 ## Compression behavior
 
 The target size is treated as an approximate upper bound. The server reserves space for the MP4 container and audio stream, calculates a video bitrate from the source duration, and encodes H.264 video with AAC audio. A very short video or an extremely small target may not be able to reach the requested size without making the result impractically low quality.
@@ -99,8 +83,8 @@ The output format can be selected independently: MP4 is recommended for general 
 ## Project structure
 
 ```text
-app.py            FastAPI server, validation, FFmpeg runner, downloads
-index.html        Accessible interface
+app.py            Local application service, validation, FFmpeg runner, downloads
+index.html        Desktop interface
 styles.css        Tokenized responsive styling
 script.js         Upload flow, progress stream, result state
 favicon.svg       Small local brand mark
@@ -108,7 +92,7 @@ squeeze.ico       Windows executable icon generated from the Squeeze mark
 requirements.txt  Pinned Python dependencies
 pyproject.toml    Project metadata and lint/type-check settings
 tests/test_app.py Pure validation and bitrate tests
-start.ps1         Safe Windows setup and server launcher
+start.ps1         Local service development launcher
 desktop_app.py    Native desktop shell and Save dialog bridge
 run-desktop.ps1   Development desktop launcher
 build.ps1         Single-file PyInstaller Windows build script
@@ -119,7 +103,7 @@ build.ps1         Single-file PyInstaller Windows build script
 - Uploads are generated with random job IDs and stored in the system temporary directory.
 - User filenames are reduced to a safe basename and are never used as a filesystem path.
 - FFmpeg is executed with an argument list, never through a shell.
-- No URL import, remote file fetch, account system, analytics, or persistent storage is included.
+- No remote file fetching, account system, analytics, or persistent storage is included.
 - A download is temporary and is removed when the compression stream closes. Do not use this unmodified as a public multi-user service without authentication, rate limiting, quotas, a background job store, and durable download authorization.
 
 ## Checks
